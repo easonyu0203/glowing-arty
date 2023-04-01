@@ -6,6 +6,7 @@
       <excludeFolder url="file://$MODULE_DIR$/raw_data" />
       <excludeFolder url="file://$MODULE_DIR$/playground" />
       <excludeFolder url="file://$MODULE_DIR$/data" />
+      <excludeFolder url="file://$MODULE_DIR$/wandb" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
