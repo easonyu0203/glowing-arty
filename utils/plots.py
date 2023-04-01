@@ -4,10 +4,20 @@ from torchvision import datasets
 import numpy as np
 from torchvision.transforms import transforms as T
 import torch
+import platform
 
+system = platform.system()
 
-plt.rcParams['font.sans-serif']=['SimHei'] #Show Chinese label
-plt.rcParams['axes.unicode_minus']=False
+if system == 'Windows':
+    # Use Microsoft YaHei font for Chinese text on Windows
+    font_name = 'Microsoft YaHei'
+else:
+    # Use SimHei font for Chinese text on other systems (e.g. macOS, Linux)
+    font_name = 'SimHei'
+
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.sans-serif'] = [font_name]
+plt.rcParams['axes.unicode_minus'] = False
 
 
 def random_plot_dataset(dataset: datasets, n_example: int = 5, reverse_norm: bool = True, figsize: int = 5):
