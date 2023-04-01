@@ -8,7 +8,7 @@ from torch import optim
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms as T
-from model import ResNet50Wrapper, ResNet18Wrapper
+from models.resnet50Wrapper import ResNet50Wrapper, ResNet18Wrapper
 import numpy as np
 import wandb
 from tqdm import tqdm
@@ -22,7 +22,7 @@ def initialize_globals():
     PROJECT_NAME = "Arty"
     LOGGER_TYPE = "wandb"
     DATA_ROOT = "data"
-    MODEL_ROOT = "models"
+    MODEL_ROOT = "trained_models"
 
 
 class Hyperparameters:
@@ -53,8 +53,8 @@ class Hyperparameters:
         self.label_smoothing = 0.1
 
         # Resizing
-        self.val_crop_size = 224
         self.train_crop_size = 176
+        self.val_crop_size = 224
 
     def to_dict(self):
         return self.__dict__
