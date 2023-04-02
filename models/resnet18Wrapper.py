@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torchvision.models import resnet18, ResNet18_Weights
 from torchvision.transforms import transforms as T
-from base_model_weights import Model_Weights
+from models.base_model_weights import Model_Weights
 
 
 class ResNet18Wrapper(nn.Module):

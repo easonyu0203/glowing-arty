@@ -45,15 +45,18 @@ def random_plot_dataset(dataset: datasets, n_example: int = 5, reverse_norm: boo
     plt.show()
 
 
-def random_plot_preds(dataset: datasets, model: nn.Module, n_example: int = 5, figsize: int = 5):
+def random_plot_preds(dataset, model, n_example=5, figsize=5):
     """Plot n random images and their predictions from the dataset."""
     # random select examples
     indices = random.sample(range(len(dataset)), n_example)
     examples = [dataset[i] for i in indices]
+    have_stn = hasattr(model, 'stn')
 
     # Calculate the number of rows and columns
-    ncols = math.ceil(math.sqrt(n_example))
+    ncols = math.ceil(math.sqrt(n_example))  # Multiply by 2 to accommodate both original and STN images
     nrows = math.ceil(n_example / ncols)
+    if have_stn:
+        nrows *= 2
 
     # Plot the images in a grid
     fig, ax = plt.subplots(nrows, ncols, figsize=(ncols * figsize, nrows * figsize),
@@ -76,13 +79,23 @@ def random_plot_preds(dataset: datasets, model: nn.Module, n_example: int = 5, f
             img = images.squeeze(0) * std[:, None, None] + mean[:, None, None]
             img = torch.clamp(img, 0, 1)
 
-            # Plot the image and title
-            ax[i].imshow(img.permute(1, 2, 0))
-            ax[i].set_title(f"pred: {pred}({pred_confidence:.2f})\nlabel: {label}", fontsize=14)  # Split title into 2 lines
-            ax[i].axis('off')
+            # Plot the original image and title
+            index = i * 2 if have_stn else i
+            ax[index].imshow(img.permute(1, 2, 0))
+            ax[index].set_title(f"Original\npred: {pred}({pred_confidence:.2f})\nlabel: {label}", fontsize=14)
+            ax[index].axis('off')
+
+            # Plot the STN transformed image if applicable
+            if have_stn:
+                stn_img = model.stn(images).squeeze(0) * std[:, None, None] + mean[:, None, None]
+                stn_img = torch.clamp(stn_img, 0, 1)
+
+                ax[i*2 + 1].imshow(stn_img.permute(1, 2, 0))
+                ax[i*2 + 1].set_title(f"STN Transformed\npred: {pred}({pred_confidence:.2f})\nlabel: {label}", fontsize=14)
+                ax[i*2 + 1].axis('off')
 
         # Turn off remaining unused axes
-        for i in range(n_example, nrows * ncols):
+        for i in range(n_example * 2, nrows * ncols):
             ax[i].axis('off')
 
     plt.show()

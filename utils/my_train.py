@@ -2,6 +2,25 @@ from typing import Optional, List, Tuple
 
 import torch
 
+class EarlyStopper:
+    def __init__(self, patience: int, target_acc: float = 1.0):
+        self.patience = patience
+        self.target_acc = target_acc
+        self.best_acc = 0.0
+        self.counter = 0
+
+    def check(self, acc: float):
+        if acc >= self.target_acc:
+            return True
+        if acc > self.best_acc:
+            self.best_acc = acc
+            self.counter = 0
+        else:
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
+
 
 def set_weight_decay(
         model: torch.nn.Module,

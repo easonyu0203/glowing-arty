@@ -1,5 +1,4 @@
 import os
-
 from logger import LoggerContext, WandbLogger, ConsoleLogger, Logger
 import utils
 import torch
@@ -8,11 +7,16 @@ from torch import optim
 from torch.utils.data import DataLoader
 from torchvision.datasets import ImageFolder
 from torchvision.transforms import transforms as T
-from models.resnet50Wrapper import ResNet50Wrapper, ResNet18Wrapper
+from models.resnet50Wrapper import ResNet50Wrapper
+from models.resnet18Wrapper import ResNet18Wrapper
+from models.mobilenet_small import MobileNetSmallWrapper
+from models.stn_mobile_small import STNMobileNetSmall
 import numpy as np
 import wandb
 from tqdm import tqdm
 from typing import Tuple
+
+from utils.my_train import EarlyStopper
 
 
 def initialize_globals():
@@ -28,22 +32,24 @@ def initialize_globals():
 class Hyperparameters:
     def __init__(self):
         # model
-        self.model = 'resnet18'
+        self.model = 'stn_mobilenet_small'
 
         # Data
         self.val_ratio = 0.2
-        self.data_ratio = 0.08
+        self.data_ratio = 1
 
         # Training hyperparameters
-        self.batch_size = 256
-        self.epochs = 50
+        self.batch_size = 64
+        self.epochs = 200
+        self.early_stop_patience = 30
+        self.target_val_acc = 100.0  # 100%
 
         # Optimizer & LR scheme
         self.opt_name = 'sgd'
         self.momentum = 0.9
-        self.lr = 0.08
+        self.lr = 0.0001
         self.lr_scheduler_name = 'cosine'
-        self.lr_warmup_epochs = 4
+        self.lr_warmup_epochs = 10
         self.lr_warmup_method = 'linear'
         self.lr_warmup_decay = 0.01
 
@@ -63,7 +69,8 @@ class Hyperparameters:
 def setup_training(config: Hyperparameters) -> Tuple[
     DataLoader, DataLoader, nn.Module, nn.Module, torch.optim.Optimizer, torch.optim.lr_scheduler._LRScheduler]:
     print("splitting dataset...")
-    train_dir, val_dir = utils.my_data.split_dataset(DATA_ROOT, val_ratio=config.val_ratio, data_ratio=config.data_ratio)
+    train_dir, val_dir = utils.my_data.split_dataset(DATA_ROOT, val_ratio=config.val_ratio,
+                                                     data_ratio=config.data_ratio)
 
     print("Loading training data...")
     train_preprocess = T.Compose([
@@ -87,14 +94,18 @@ def setup_training(config: Hyperparameters) -> Tuple[
 
     print("Creating data loaders...")
     train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True,
-                              pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, pin_memory=True)
+                              pin_memory=True, num_workers=10)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, pin_memory=True, num_workers=10)
 
     print("Creating model...")
     if config.model == 'resnet18':
         model = ResNet18Wrapper(num_classes=len(train_dataset.classes))
     elif config.model == 'resnet50':
         model = ResNet50Wrapper(num_classes=len(train_dataset.classes))
+    elif config.model == 'mobile_small':
+        model = MobileNetSmallWrapper(num_classes=len(train_dataset.classes))
+    elif config.model == 'stn_mobilenet_small':
+        model = STNMobileNetSmall(num_classes=len(train_dataset.classes))
     else:
         raise NotImplementedError(f"Model {config.model} is not implemented")
     model.to(DEVICE)
@@ -155,22 +166,24 @@ def train_one_epoch(model, criterion, optimizer, data_loader, epoch, logger: Log
         optimizer.step()
 
         # wandb log every 10 batches
-        example_ct += data_loader.batch_size
-        acc1, acc3 = utils.my_train.accuracy(outputs, labels, topk=(1, 3))
-        loss_value = loss.item()
-        lr = optimizer.param_groups[0]['lr']
-        logger.log({
-            "train/loss": loss_value,
-            "train/acc1": acc1,
-            "train/acc3": acc3,
-            "train/lr": lr,
-            "train/epoch": epoch,
-        })
+        if i % 10 == 0:
+            example_ct += data_loader.batch_size
+            acc1, acc3 = utils.my_train.accuracy(outputs, labels, topk=(1, 3))
+            loss_value = loss.item()
+            lr = optimizer.param_groups[0]['lr']
+            logger.log({
+                "train/loss": loss_value,
+                "train/acc1": acc1,
+                "train/acc3": acc3,
+                "train/lr": lr,
+                "train/epoch": epoch,
+                "train/example_ct": example_ct,
+            })
 
-        # update tqdm progress bar description with current metrics
-        data_loader_progress.set_description(
-            f"Epoch {epoch} | Loss: {loss.item():.4f} | Acc1: {acc1:.4f} | Acc3: {acc3:.4f} | LR: {lr:.6f}"
-        )
+            # update tqdm progress bar description with current metrics
+            data_loader_progress.set_description(
+                f"Epoch {epoch} | Loss: {loss.item():.4f} | Acc1: {acc1:.4f} | Acc3: {acc3:.4f} | LR: {lr:.6f}"
+            )
 
 
 def evaluate(model, criterion, data_loader, example_ct, logger: Logger):
@@ -198,6 +211,8 @@ def evaluate(model, criterion, data_loader, example_ct, logger: Logger):
             images, labels = data_loader.dataset[i]
             images = images.unsqueeze(0).to(DEVICE)
             outputs = model(images)
+            if hasattr(model, 'stn'):
+                stn_img = model.stn(images)
             _, preds = torch.max(outputs, 1)
             preds = preds.item()
             label = data_loader.dataset.classes[labels]
@@ -205,13 +220,16 @@ def evaluate(model, criterion, data_loader, example_ct, logger: Logger):
             pred_confidence = torch.softmax(outputs, dim=1)[0, preds].item()
             # Append logged image to the list
             logged_images.append(wandb.Image(images[0], caption=f"pred: {pred}({pred_confidence:.2f}), label: {label}"))
+            if hasattr(model, 'stn'):
+                logged_images.append(wandb.Image(stn_img[0], caption=f"STN Transformed Image"))
 
         # log metrics
         logger.log({
             "val/loss": loss_avg.avg,
             "val/acc1": acc1_avg.avg,
             "val/acc3": acc3_avg.avg,
-            "val/sample": logged_images
+            "val/sample": logged_images,
+            "val/example_ct": example_ct,
         })
 
     return acc1_avg.avg, acc3_avg.avg, loss_avg.avg
@@ -236,12 +254,19 @@ def pipline(hyperparameters: Hyperparameters, logger: Logger):
         print("Start training...")
         logger.watch(model, criterion, log="all", log_freq=10)
         best_acc1 = 0.0
+        early_stopper = EarlyStopper(config.early_stop_patience, config.target_val_acc)
         for epoch in range(config.epochs):
             train_one_epoch(model, criterion, optimizer, train_loader, epoch, logger)  # Add logger as an argument
             lr_scheduler.step()
             example_ct = (epoch + 1) * len(train_loader.dataset)
             acc1, acc3, loss = evaluate(model, criterion, val_loader, example_ct, logger)  # Add logger as an argument
             best_acc1 = save_best_model(model, acc1, best_acc1)
+
+            # Check for early stopping
+            stop = early_stopper.check(acc1)
+            if stop:
+                print("Early stopping triggered")
+                break
 
 
 def main():
