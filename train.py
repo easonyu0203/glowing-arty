@@ -1,4 +1,6 @@
 import os
+from dataclasses import dataclass
+
 from logger import LoggerContext, WandbLogger, ConsoleLogger, Logger
 import utils
 import torch
@@ -29,41 +31,42 @@ def initialize_globals():
     MODEL_ROOT = "trained_models"
 
 
+@dataclass
 class Hyperparameters:
-    def __init__(self):
-        # model
-        self.model = 'stn_mobilenet_small'
+    # model
+    model: str = 'stn_mobilenet_small'
 
-        # Data
-        self.val_ratio = 0.2
-        self.data_ratio = 1
+    # Data
+    val_ratio: float = 0.2
+    data_ratio: float = 1
 
-        # Training hyperparameters
-        self.batch_size = 64
-        self.epochs = 200
-        self.early_stop_patience = 30
-        self.target_val_acc = 100.0  # 100%
+    # Training hyperparameters
+    batch_size: int = 64
+    epochs: int = 200
+    early_stop_patience: int = 30
+    target_val_acc: float = 100.0  # 100%
 
-        # Optimizer & LR scheme
-        self.opt_name = 'sgd'
-        self.momentum = 0.9
-        self.lr = 0.0001
-        self.lr_scheduler_name = 'cosine'
-        self.lr_warmup_epochs = 10
-        self.lr_warmup_method = 'linear'
-        self.lr_warmup_decay = 0.01
+    # Optimizer & LR scheme
+    opt_name: str = 'sgd'
+    momentum: float = 0.9
+    lr: float = 0.0001
+    lr_scheduler_name: str = 'cosine'
+    lr_warmup_epochs: int = 10
+    lr_warmup_method: str = 'linear'
+    lr_warmup_decay: float = 0.01
 
-        # Regularization and Augmentation
-        self.weight_decay = 2e-05
-        self.norm_weight_decay = 0.0
-        self.label_smoothing = 0.1
+    # Regularization and Augmentation
+    weight_decay: float = 2e-05
+    norm_weight_decay: float = 0.0
+    label_smoothing: float = 0.1
 
-        # Resizing
-        self.train_crop_size = 176
-        self.val_crop_size = 224
+    # Resizing
+    train_crop_size: int = 176
+    val_crop_size: int = 224
 
     def to_dict(self):
         return self.__dict__
+
 
 
 def setup_training(config: Hyperparameters) -> Tuple[
@@ -246,7 +249,7 @@ def save_best_model(model, acc1, best_acc1):
     return best_acc1
 
 
-def pipline(hyperparameters: Hyperparameters, logger: Logger):
+def pipline(hyperparameters: Hyperparameters, logger: Logger = WandbLogger()):
     with LoggerContext(logger, PROJECT_NAME, hyperparameters.to_dict()) as logger:
         config: Hyperparameters = hyperparameters
         train_loader, val_loader, model, criterion, optimizer, lr_scheduler = setup_training(config)
